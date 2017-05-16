@@ -19,10 +19,11 @@ class MoveBaseWayPoint():
         self.goal = MoveBaseGoal        #init the future goal
         self.WayPointsLists = list()    #create a list which will contain the goals
         self.index = 0                  #init an index
-        self.over = 0
-        self.dir = Marker()
-        self.MarkersLists = list()
+        self.over = 0                   #to know if we need to close the program
+        self.MarkersLists = list()      #a list of markers
+        self.success = 0                #this will contain the number of goals reached
         self.getnumber()                #use the function getNumber
+    
         
         
     def getnumber(self):        
@@ -50,20 +51,15 @@ class MoveBaseWayPoint():
 
     def callback(self, msg):    #this function will be used each time we create a new nav goal
         
-        if self.over == 0:  
-            new_move = actionlib.SimpleActionClient("move_base", MoveBaseAction)
-            new_move.wait_for_server()
-            new_move.cancel_all_goals()
+        if self.over == 0:  #if we hadn't finish the program
+            new_move = actionlib.SimpleActionClient("move_base", MoveBaseAction) #"new_move" will be a variable containing a action, here a MoveBaseAction to move the robot
+            new_move.wait_for_server()  #we are waiting the robot server
+            new_move.cancel_all_goals() #We cancel every goals to avoir a movement of the robot
 
             self.goal = msg     #goal (a MoveBaseGoal) become the new goal we entered
 
-            rospy.loginfo(msg)
+            self.add_markers(self.goal) #with the goal we add a new markers on this position
 
-
-            self.add_markers(self.goal)
-
-
-            
             if self.index == 0: #if this is the first move we allow it to not be compare
                 self.WaypointsLists = self.WayPointsLists.append(self.goal) 
                     #We add the new goal to the goals list
@@ -96,9 +92,6 @@ class MoveBaseWayPoint():
                 #our goal become the umpteenth value of the list of goals
             self.index = self.index + 1
                 #we increase the index
-
-            rospy.loginfo(self.index)
-            rospy.loginfo(self.number)
             
             self.move(self.goal)
                 #we call the move function with the new goal
@@ -107,92 +100,102 @@ class MoveBaseWayPoint():
                 self.shutdown()
                 #we can shutdown the program
 
-    def move(self, goal):
+    def move(self, goal):       #this function will make move the robot
             
-            new_move = actionlib.SimpleActionClient("move_base", MoveBaseAction)
-            new_move.wait_for_server()
+            new_move = actionlib.SimpleActionClient("move_base", MoveBaseAction) #"new_move" will be a variable containing a action, here a MoveBaseAction to move the robot
+            new_move.wait_for_server()  #we are waiting the robot server
 
+            my_goal = MoveBaseGoal()    #This variable contain a MoveBaseGoal it will contain position of goals
 
+            #We are creating our goal item by item to avoid a problem because of the conversion between MoveBaseAction and MoveBaseGoal
 
-            my_goal = MoveBaseGoal()
-            my_goal.target_pose.header.frame_id  = 'Talker N1'
-            my_goal.target_pose.header.frame_id = "/map";
-            my_goal.target_pose.pose.position.x = goal.goal.target_pose.pose.position.x
-            my_goal.target_pose.pose.position.y = goal.goal.target_pose.pose.position.y
-            my_goal.target_pose.pose.orientation.z = goal.goal.target_pose.pose.orientation.z
+            my_goal.target_pose.header.frame_id = "/map"; # the frame id is used to determined the topic used
+            my_goal.target_pose.pose.position.x = goal.goal.target_pose.pose.position.x #the spacial position X
+            my_goal.target_pose.pose.position.y = goal.goal.target_pose.pose.position.y #the spacial position Y
+            my_goal.target_pose.pose.orientation.z = goal.goal.target_pose.pose.orientation.z   #the orientation of the robot
             my_goal.target_pose.pose.orientation.w = goal.goal.target_pose.pose.orientation.w
-            rospy.loginfo(my_goal)
 
 
-            new_move.send_goal(my_goal)
-            rospy.loginfo("sending goal")
+            new_move.send_goal(my_goal)     #we are sending to the robot his goal converted
 
-            new_move.wait_for_result()
+            rospy.loginfo("sending goal N*" + str(self.success+1)) #we display we are going to the umpteenth point
 
-            state = new_move.get_state()
-            if state == GoalStatus.SUCCEEDED:
-                rospy.loginfo("Goal succeeded")  
-                self.suppr_marks()      
+            new_move.wait_for_result() #we are waiting the robot to reach his destination
 
-         #   if not finished_within_time:
-          #      new_move.cancel_goal()
-           #     rospy.loginfo("Timed out achieving goal")
-           # else:
-            #    state = new_move.get_state()
-             #   if state == GoalStatus.SUCCEEDED:
-              #      rospy.loginfo("Goal succeeded!")
-                
+            state = new_move.get_state()    #we create a variable like a boolean to know if the robot is arrived
+            if state == GoalStatus.SUCCEEDED:   #if we reach the destination
+                rospy.loginfo("Goal N*" +str(self.success+1) + " succeeded") #we display that we arrived to the umpteenth goals       
+                self.suppr_marks(self.success)      #we can suppress the marker from this destination
+                self.success = self.success + 1     #we increase the variable containing the number of goals reached
 
-             
 
-    def add_markers(self, pos):
-        marker = Marker()
+
+
+    def add_markers(self, pos): #this function will add a marker to the position marked by goal
+        marker = Marker()       #we create a new marker, a marker has an architecture pretty similar as the MoveBaseGoal
         
-        marker.header.framer_id = "marker N[self.index]"
-        marker.type = arrow
+        marker.header.frame_id = "/map" #the topic
+        
+        marker.id = self.index  #the index, it need to be unique
+        marker.ns = "Marker"    #some additional name if we need
 
-        marker.pose.position.x = pos.goal.target_pose.pose.position.x
+        marker.action = marker.ADD  #the action permit to create, modify or delete a marker, here we create it
+       
+        marker.type = marker.ARROW  #the type of the marker, here an arrow
+
+        marker.lifetime = rospy.Duration(0) #the life time of the marker, a 0 is equal to infity
+      
+        
+        marker.pose.position.x = pos.goal.target_pose.pose.position.x   #position of the marker
         marker.pose.position.y = pos.goal.target_pose.pose.position.y
         marker.pose.position.z = 0.0
 
-        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.x = 0.0     #orientation of the marker
         marker.pose.orientation.y = 0.0
         marker.pose.orientation.z = pos.goal.target_pose.pose.orientation.z
         marker.pose.orientation.w = pos.goal.target_pose.pose.orientation.w
 
-        marker.scale.x = 1.0
-        marker.scale.y = 0.1
-        marker.scale.z = 0.1
+        marker.header.stamp = rospy.Time.now() #we setup his internal timer to the actual time
 
-        marker.color.a = 1.0
-        marker.color.b = 0.0
-        marker.color.r = 0.0
+        marker.scale.x = 0.75   #the size (in meter) of the marker
+        marker.scale.y = 0.08
+        marker.scale.z = 0.08
+
+        marker.color.a = 1.0    #the color of the arrow in RGBA (red blue green alpha) , alpha need to be at 1 to not be invisible
+        marker.color.b = 1.0
+        marker.color.r = 1.0
         marker.color.g = 1.0
 
-        self.MarkersLists.appends(marker)
-        self.Marker_Publisher()
+        marker.text = ("Goal N" + str(self.index)) #additionnal text 
+
+        self.MarkersLists.append(marker) #we add this marker on the list of markers
+        self.Marker_Publisher()         #we call the publisher function
 
 
-    def Marker_Publisher(self):
-        ind = 0
-        marker = Marker()
-        while ind < len(self.MarkersLists):
-            marker = self.MarkersLists(ind)
-            pub = rospy.Publisher('visu_marker', Marker() ) 
-            pub.publish(marker)
-            ind = ind +1
+    def Marker_Publisher(self): #this function publish all markers
+        self.pub = rospy.Publisher('/waypoint_markers', Marker , queue_size=10) #we create a publisher, here we are publishing to the topic 
+            # /waypoint_markers, we are publishing a marker.
+
+        ind = 0     #the index
+
+        while ind < len(self.MarkersLists):        #while the index is less than the lenght of the list
+
+            self.pub.publish(self.MarkersLists[ind])    #we publish the umpteenth marker
+            ind = ind +1                                #we increment the value of the index
 
 
 
 
-    def suppr_marks(self):
-        if len(self.MarkersLists) >= 1:
-            del self.MarkersLists[0]
-        self.Marker_Publisher()
+    def suppr_marks(self, index):       #this function will suppress our marker
+
+#        kill_marker = Marker()          
+
+        if len(self.MarkersLists) > 0: #If the length of the list is greater than 0
+            self.MarkersLists[index].action = self.MarkersLists[index].DELETE  #we change the action of marker to delete
+        #with this he will delete himself on rviz
+        
+        self.Marker_Publisher() #we call the publisher
             
-
-
-
 
 
     def shutdown(self):
